@@ -1,0 +1,9 @@
+venv/
+dist/
+build/
+snaptab.egg-info/
+input/
+output/
+
+*.pyc
+__pycache__/

@@ -2,7 +2,7 @@ from setuptools import setup, find_namespace_packages
 
 setup(
     name='snaptab',
-    version='0.1.0',
+    version='0.1.1',
     description='Build your own table dataset from PDFs in a single snap!',
     author='Anathapindika Dravichi',
     author_email='anathapindika_12201220@csepup.ac.in',

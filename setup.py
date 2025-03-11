@@ -13,7 +13,6 @@ setup(
         'pdf2image',
         'PyPDF2',
         'ultralytics',
-        'argparse',
     ],
     entry_points={
         'console_scripts': [

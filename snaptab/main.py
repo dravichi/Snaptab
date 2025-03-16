@@ -11,7 +11,7 @@ import os
 POPPLER_PATH = get_poppler_path()
 MODEL_PATH = get_model_path() 
 
-__version__ = pkg_resources.get_distribution("snaptab").version
+_version_ = pkg_resources.get_distribution("snaptab").version
 class_mapping = {0: 'table', 1: 'no_table'}
 total_tables = total_pdfs = 0
 
@@ -72,6 +72,13 @@ def get_crop(crop_input):
         else:
             raise ValueError("Invalid input. Please enter 'True' or 'False'.")
 
+def get_base_name(base_name_input):
+    if not re.match(r'^[\w\s]+$', base_name_input):
+        raise ValueError("Invalid base_name. Please ensure it contains only alphanumeric characters, underscores, and spaces.")
+    if len(base_name_input) > 255:
+        raise ValueError("The base_name is too long. Please ensure it doesn't exceed 255 characters.")
+    return base_name_input
+
 def get_start_index(start_index_input):
     try:
         start_index = int(start_index_input)
@@ -81,13 +88,6 @@ def get_start_index(start_index_input):
             raise ValueError("Starting index must be greater than or equal to 1.")
     except ValueError:
         raise ValueError("Invalid input. Please enter a valid integer for the starting index.")
-
-def get_basename(basename_input):
-    if not re.match(r'^[\w\s]+$', basename_input):
-        raise ValueError("Invalid basename. Please ensure it contains only alphanumeric characters, underscores, and spaces.")
-    if len(basename_input) > 255:
-        raise ValueError("The basename is too long. Please ensure it doesn't exceed 255 characters.")
-    return basename_input
 
 def crop_image(image, bbox):
     x1, y1, x2, y2 = bbox
@@ -111,7 +111,7 @@ def detect_table(image, model, conf_threshold):
                 table_bboxes.append((x1, y1, x2, y2))
     return table_bboxes
 
-def pdf_to_images(model, input_folder, output_folder, image_format, dpi, conf_threshold, crop_images, start_index, pages, basename):
+def pdf_to_images(model, input_folder, output_folder, image_format, dpi, conf_threshold, crop_images, base_name, start_index, pages):
     global total_tables
     try:
         images = convert_from_path(input_folder, dpi=dpi, first_page=pages[0] if pages else 1, 
@@ -121,13 +121,13 @@ def pdf_to_images(model, input_folder, output_folder, image_format, dpi, conf_th
             if crop_images:
                 for bbox in table_bboxes:
                     cropped_image = crop_image(image, bbox)
-                    output_image_path = os.path.join(output_folder, f"{basename}_{start_index}.{image_format.lower()}")
+                    output_image_path = os.path.join(output_folder, f"{base_name}_{start_index}.{image_format.lower()}")
                     cropped_image.save(output_image_path, image_format)
                     print(f"Table detected! Saved: {output_image_path}")
                     total_tables, start_index = total_tables + 1, start_index + 1
             else:
                 if table_bboxes:
-                    output_image_path = os.path.join(output_folder, f"{basename}_{start_index}.{image_format.lower()}")
+                    output_image_path = os.path.join(output_folder, f"{base_name}_{start_index}.{image_format.lower()}")
                     image.save(output_image_path, image_format)
                     print(f"Table detected in the page. Saved: {output_image_path}")
                     total_tables, start_index = total_tables + 1, start_index + 1
@@ -136,7 +136,7 @@ def pdf_to_images(model, input_folder, output_folder, image_format, dpi, conf_th
         print(f"Error occurred: {e}")
         return start_index
 
-def convert(model, input_folder, output_folder, image_format, dpi, conf_threshold, crop_images, start_index, basename, pages_per_chunk=25):
+def convert(model, input_folder, output_folder, image_format, dpi, conf_threshold, crop_images, base_name, start_index, pages_per_chunk=25):
     global total_pdfs
     for filename in os.listdir(input_folder):
         _, ext = os.path.splitext(filename)
@@ -155,7 +155,7 @@ def convert(model, input_folder, output_folder, image_format, dpi, conf_threshol
                     total_pages = len(reader.pages)
                 for i in range(0, total_pages, pages_per_chunk):
                     pages = list(range(i + 1, min(i + pages_per_chunk, total_pages) + 1))
-                    start_index = pdf_to_images(model, pdf_path, output_folder, image_format, dpi, conf_threshold, crop_images, start_index, pages, basename)
+                    start_index = pdf_to_images(model, pdf_path, output_folder, image_format, dpi, conf_threshold, crop_images, base_name, start_index, pages)
             except Exception as e:
                 print(f"Error occurred: {e}")
         else:
@@ -171,9 +171,9 @@ def main():
         parser.add_argument('--dpi', type=int, default=75, help='DPI for PDF conversion (default: 75)')
         parser.add_argument('--conf_threshold', type=float, default=0.1, help='Confidence threshold for table detection (default: 0.1)')
         parser.add_argument('--crop_images', type=str, default='False', help='Whether to crop detected tables from images (default: False)')
+        parser.add_argument('--base_name', type=str, default='image', help='Basename for output images (default: "image")')
         parser.add_argument('--start_index', type=int, default=1, help='Starting index for image filenames (default: 1)')
-        parser.add_argument('--basename', type=str, default='image', help='Basename for output images (default: "image")')
-        parser.add_argument('--version', action='version', version=f'%(prog)s {__version__}')
+        parser.add_argument('--version', action='version', version=f'%(prog)s {_version_}')
         args = parser.parse_args()
         input_folder = get_input_folder(args.input_folder)
         output_folder = get_output_folder(args.output_folder)
@@ -181,13 +181,13 @@ def main():
         dpi = get_dpi(args.dpi)
         conf_threshold = get_conf_threshold(args.conf_threshold)
         crop_images = get_crop(args.crop_images)
+        base_name = get_base_name(args.base_name)
         start_index = get_start_index(args.start_index)
-        basename = get_basename(args.basename)
         model = YOLO(MODEL_PATH)
         convert(model=model, input_folder=input_folder, output_folder=output_folder, 
                 image_format=image_format, dpi=dpi, 
                 conf_threshold=conf_threshold, crop_images=crop_images, 
-                start_index=start_index, basename=basename)
+                base_name=base_name, start_index=start_index)
     except ValueError as e:
         print(f"ValueError: {e}")
         sys.exit(1)

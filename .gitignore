@@ -4,6 +4,7 @@ build/
 snaptab.egg-info/
 input/
 output/
+bash.exe.stackdump
 
 *.pyc
 __pycache__/

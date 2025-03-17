@@ -92,12 +92,7 @@ def get_start_index(start_index_input):
 def crop_image(image, bbox):
     x1, y1, x2, y2 = bbox
     width, height = image.size
-    x1, y1 = max(0, x1), max(0, y1)
-    x2, y2 = min(width, x2), min(height, y2)
-    if x1 >= x2 or y1 >= y2:
-        print("Invalid crop coordinates: Skipping crop.")
-        return image
-    return image.crop((x1, y1, x2, y2))
+    return image.crop((max(0, x1), max(0, y1), min(width, x2), min(height, y2)))
 
 def detect_table(image, model, conf_threshold):
     results = model(image, verbose=False)
@@ -108,35 +103,30 @@ def detect_table(image, model, conf_threshold):
             cls_id = int(box.cls[0].item())
             if class_mapping.get(cls_id) == 'table' and conf > conf_threshold:
                 x1, y1, x2, y2 = box.xyxy[0].tolist()
-                table_bboxes.append((x1, y1, x2, y2))
+                if x1 < x2 and y1 < y2:
+                    table_bboxes.append((x1, y1, x2, y2))
     return table_bboxes
 
 def pdf_to_images(model, input_folder, output_folder, image_format, dpi, conf_threshold, crop_images, base_name, start_index, pages):
     global total_tables
     try:
-        images = convert_from_path(input_folder, dpi=dpi, first_page=pages[0] if pages else 1, 
-                                   last_page=pages[-1] if pages else None, poppler_path=POPPLER_PATH)
+        images = convert_from_path(input_folder, dpi=dpi, first_page=pages[0], last_page=pages[-1], poppler_path=POPPLER_PATH)
         for image in images:
             table_bboxes = detect_table(image, model, conf_threshold)
-            if crop_images:
-                for bbox in table_bboxes:
-                    cropped_image = crop_image(image, bbox)
-                    output_image_path = os.path.join(output_folder, f"{base_name}_{start_index}.{image_format.lower()}")
-                    cropped_image.save(output_image_path, image_format)
-                    print(f"Table detected! Saved: {output_image_path}")
-                    total_tables, start_index = total_tables + 1, start_index + 1
-            else:
-                if table_bboxes:
-                    output_image_path = os.path.join(output_folder, f"{base_name}_{start_index}.{image_format.lower()}")
-                    image.save(output_image_path, image_format)
-                    print(f"Table detected in the page. Saved: {output_image_path}")
-                    total_tables, start_index = total_tables + 1, start_index + 1
+            if not table_bboxes:
+                continue 
+            for bbox in table_bboxes if crop_images else [None]:  
+                output_image_path = os.path.join(output_folder, f"{base_name}_{start_index}.{image_format.lower()}")
+                image_to_save = crop_image(image, bbox) if crop_images else image
+                image_to_save.save(output_image_path, image_format)
+                print(f"Table detected! Saved: {output_image_path}")
+                total_tables, start_index = total_tables + 1, start_index + 1
         return start_index
     except Exception as e:
         print(f"Error occurred: {e}")
         return start_index
 
-def convert(model, input_folder, output_folder, image_format, dpi, conf_threshold, crop_images, base_name, start_index, pages_per_chunk=25):
+def convert(model, input_folder, output_folder, image_format, dpi, conf_threshold, crop_images, base_name, start_index):
     global total_pdfs
     for filename in os.listdir(input_folder):
         _, ext = os.path.splitext(filename)
@@ -153,8 +143,11 @@ def convert(model, input_folder, output_folder, image_format, dpi, conf_threshol
                         except:
                             continue
                     total_pages = len(reader.pages)
-                for i in range(0, total_pages, pages_per_chunk):
-                    pages = list(range(i + 1, min(i + pages_per_chunk, total_pages) + 1))
+                for i in range(0, total_pages, 25):
+                    pages = list(range(i + 1, min(i + 25, total_pages) + 1))
+                    if not pages:
+                        print(f"Skipping {pdf_path} (no pages detected)")
+                        continue
                     start_index = pdf_to_images(model, pdf_path, output_folder, image_format, dpi, conf_threshold, crop_images, base_name, start_index, pages)
             except Exception as e:
                 print(f"Error occurred: {e}")
@@ -164,7 +157,7 @@ def convert(model, input_folder, output_folder, image_format, dpi, conf_threshol
 
 def main():
     try:
-        parser = argparse.ArgumentParser(description="Extract tables from PDFs using YOLO.")
+        parser = argparse.ArgumentParser(description="Build your own table dataset from PDFs in a single snap!")
         parser.add_argument('input_folder', type=str, help='Path to the input folder containing PDF files')
         parser.add_argument('output_folder', type=str, help='Path to the output folder where images will be saved')
         parser.add_argument('--image_format', type=str, default='PNG', choices=['PNG', 'JPEG', 'JPG', 'TIFF', 'BMP'], help='Image format for saved images (default: PNG)')
